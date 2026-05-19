@@ -1,0 +1,5 @@
+{
+    "git.ignoreLimitWarning": true,
+    "coq.loadCoqProject": true,
+    "coq.coqProjectRoot": "/home/user/Desktop/spoq/osdi23-paper114-ae/verification/SeKVMProof/Proof",
+}

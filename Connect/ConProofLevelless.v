@@ -25,6 +25,16 @@ Require Import LayerSem.Libs.Zutils.hardcode_rewrite.
    rely from line 49 in S2PTTreeOps/Spec.v (level 2 empty for level 3 address)
 *)
 
+(*
+  alternative definition:
+  {a1 / 4096 / 512 = a2 / 4096 / 512} + {a1 / 4096 <> a2 / 4096}
+  a1 / 4096 <> a2 / 4096 -> a1 / 4096 / 512 <> a2 / 4096 / 512
+*)
+Definition addr_eq :=
+  forall addr addr',
+    is_addr addr -> is_addr addr' ->
+    addr / 4096 / 512 = addr' / 4096 / 512 -> addr / 4096 = addr' / 4096.
+
 Definition pte_mask (pte: Z) : Z :=
   pte |' (1 << 55) |' (1 << 56).
 
@@ -103,9 +113,7 @@ Theorem set_refine :
       (set : Z -> Z -> Z -> Z -> X -> option X)
       (rel: Z -> Z -> Prop)
     (* Boundary condition *)
-    (Haddr_bound: forall addr',
-      is_addr addr' ->
-      addr' / 4096 / 512 = addr / 4096 / 512 -> addr' / 4096 = addr / 4096)
+    (Haddr_bound: addr_eq)
     (* array propery *)
     (Haneq:
       forall addr' ,
@@ -134,16 +142,16 @@ Proof.
   repeat simpl_hyp Hspec;
   repeat simpl_hyp Hspec2.
   repeat extract_prop.
-  clear Prop0 Prop1 Prop2 Prop3.
+  clear Prop0 Prop1 Prop3.
   subst npt r1 r2.
   inv Hspec. simpl.
   rewrite ZMap.gsspec. rewrite zeq_true.
   simpl_func C3; repeat extract_prop. simpl.
   - simpl_func C1; repeat extract_prop.
-    clear Prop0 Prop1 Prop2. simpl.
+    clear Prop0 Prop1 Prop3. simpl.
     destruct (Z.eq_dec (addr' / 4096 / 512) (addr / 4096 / 512)) as [eq|neq].
     (* addr = addr' *)
-    + specialize (Haeq _ (Haddr_bound _ H eq)) as [Haeq rel_low]. rewrite Haeq in *.
+    + specialize (Haeq _ (Haddr_bound _ _ H Prop2 eq)) as [Haeq rel_low]. rewrite Haeq in *.
       rewrite Z.eqb_eq in C. rewrite ZMap.gsspec. rewrite eq. rewrite zeq_true.
       unfold refrel_pte. simpl. exists pte. unfold rel_pte.
       split; [assumption|solve_pte_mask].
@@ -184,15 +192,15 @@ Theorem walk_refine:
     refrel vmid hst walk mem rel ->
     walk_npt_spec vmid addr hst = Some (v1, hst') ->
     walk vmid addr mem = Some (v2, mem') ->
-    refrel vmid hst' walk mem' rel.
+    refrel vmid hst' walk mem' rel /\ refrel_pte rel rel_pte v2 v1.
 Proof.
   intros X vmid addr mem mem' hst hst' v1 v2 walk rel Hpure Hrel Hspec Hspec2.
   unfold walk_npt_spec in *.
   repeat autounfold with sem in *.
   repeat simpl_hyp Hspec;
   repeat extract_prop.
-  clear Prop0 Prop1 Prop2 Prop3.
-  inv Hspec.
+  clear Prop0 Prop1 Prop3. inv Hspec.
+  split.
   (* refine rel *)
   inv Hrel. constructor. intros.
   rename id_same0 into id_same', addr0 into addr'.
@@ -216,4 +224,11 @@ Proof.
   try (destruct p2);
   destruct r2;
   try congruence.
+  (* refine val *)
+  unfold s2pt_walk. inv Hrel. specialize (id_same0 _ Prop2) as id_same'; clear id_same0.
+  simpl in *.
+  destruct (walk vmid addr mem) as [ [u1 aa]|]; [inv Hspec2|congruence].
+  destruct ((e_lv2pt (e_s2pts (shared hst')) @ vmid) @ (addr / 4096 / 512)); [assumption|].
+  destruct ((e_lv3pt (e_s2pts (shared hst')) @ vmid) @ (addr / 4096)); [assumption|].
+  exfalso. assumption.
 Qed.

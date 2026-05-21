@@ -25,15 +25,10 @@ Require Import LayerSem.Libs.Zutils.hardcode_rewrite.
    rely from line 49 in S2PTTreeOps/Spec.v (level 2 empty for level 3 address)
 *)
 
-(*
-  alternative definition:
-  {a1 / 4096 = a2 / 4096} + {a1 / 4096 / 512 <> a2 / 4096 / 512}
-  a1 / 4096 <> a2 / 4096 -> a1 / 4096 / 512 <> a2 / 4096 / 512
-*)
-Definition addr_eq :=
+Definition addr_dec :=
   forall addr addr',
     is_addr addr -> is_addr addr' ->
-    addr / 4096 / 512 = addr' / 4096 / 512 -> addr / 4096 = addr' / 4096.
+    {addr / 4096 = addr' / 4096} + {addr / 4096 / 512 <> addr' / 4096 / 512}.
 
 Definition pte_mask (pte: Z) : Z :=
   pte |' (1 << 55) |' (1 << 56).
@@ -113,7 +108,7 @@ Theorem set_refine :
       (set : Z -> Z -> Z -> Z -> X -> option X)
       (rel: Z -> Z -> Prop)
     (* Boundary condition *)
-    (Haddr_bound: addr_eq)
+    (Haddr_bound: addr_dec)
     (* array propery *)
     (Haneq:
       forall addr' ,
@@ -149,9 +144,10 @@ Proof.
   simpl_func C3; repeat extract_prop. simpl.
   - simpl_func C1; repeat extract_prop.
     clear Prop0 Prop1 Prop3. simpl.
-    destruct (Z.eq_dec (addr' / 4096 / 512) (addr / 4096 / 512)) as [eq|neq].
+    destruct (Haddr_bound _ _ H Prop2) as [eq|neq].
     (* addr = addr' *)
-    + specialize (Haeq _ eq) as [Haeq rel_low]. rewrite Haeq in *.
+    + assert (addr' / 4096 / 512 = addr / 4096 / 512) as eq' by congruence.
+      specialize (Haeq _ eq') as [Haeq rel_low]. rewrite Haeq in *.
       rewrite Z.eqb_eq in C. rewrite ZMap.gsspec. rewrite eq. rewrite zeq_true.
       unfold refrel_pte. simpl. exists pte. unfold rel_pte.
       split; [assumption|solve_pte_mask].
@@ -163,11 +159,12 @@ Proof.
       inversion Haneq; subst; apply id_same'.
   - simpl_func C0; repeat extract_prop. simpl.
     clear Prop1.
-    destruct (Z.eq_dec (addr' / 4096 / 512) (addr / 4096 / 512)) as [eq|neq].
+    destruct (Haddr_bound _ _ H Prop2) as [eq|neq].
     (* addr = addr' *)
-    + specialize (Haeq _ eq) as [Haeq rel_low]. rewrite Haeq.
+    + assert (addr' / 4096 / 512 = addr / 4096 / 512) as eq' by congruence.
+      specialize (Haeq _ eq') as [Haeq rel_low]. rewrite Haeq.
       subst. simpl in Prop0. rewrite eq in *. rewrite Prop0 in *.
-      rewrite ZMap.gsspec. rewrite (Haddr_bound _ _ H Prop2 eq). rewrite zeq_true.
+      rewrite ZMap.gsspec. rewrite zeq_true.
       unfold refrel_pte. simpl. exists pte. unfold rel_pte.
       split; [assumption|solve_pte_mask].
     (* addr <> addr' *)

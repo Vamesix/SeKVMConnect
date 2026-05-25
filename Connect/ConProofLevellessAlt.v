@@ -22,6 +22,7 @@ Require Import LayerSem.Libs.Zutils.hardcode_rewrite.
 (* Uses Haddr_bound for boundary condition: see in set_refine *)
 (* Uses one of the rely clause for boundary condition:
    see in set_refine
+   is_addr from both set and walk
    rely from line 49 in S2PTTreeOps/Spec.v (level 2 empty for level 3 address)
 *)
 
@@ -114,12 +115,14 @@ Theorem set_refine :
       forall addr' ,
         (* is_addr addr' -> *)
         addr' / 4096 / 512 <> addr / 4096 / 512 ->
+        (* addr' / 4096 / 512 <> addr / 4096 / 512 -> *)
         fst_option (walk vmid addr' mem') = 
         fst_option (walk vmid addr' mem))
     (Haeq:
       forall addr',
         (* is_addr addr' -> *)
         addr' / 4096 / 512 = addr / 4096 / 512 ->
+        (* addr' / 4096 / 512 = addr / 4096 / 512 -> *)
         walk vmid addr' mem' = Some (pte', mem'') /\ rel pte' pte),
     (* goal *)
     refrel vmid hst walk mem rel ->
@@ -223,9 +226,8 @@ Proof.
   try congruence.
   (* refine val *)
   unfold s2pt_walk. inv Hrel. specialize (id_same0 _ Prop2) as id_same'; clear id_same0.
-  simpl in *.
-  destruct (walk vmid addr mem) as [ [u1 aa]|]; [inv Hspec2|congruence].
+  simpl in *. rewrite Hspec2 in id_same'.
   destruct ((e_lv2pt (e_s2pts (shared hst')) @ vmid) @ (addr / 4096 / 512)); [assumption|].
   destruct ((e_lv3pt (e_s2pts (shared hst')) @ vmid) @ (addr / 4096)); [assumption|].
-  exfalso. assumption.
+  inv id_same'.
 Qed.

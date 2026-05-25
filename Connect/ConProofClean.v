@@ -17,26 +17,8 @@ Local Opaque Z.add Z.mul Z.div Z.sub Z.land Z.lor Z.lxor Z.shiftl Z.shiftr Z.quo
 Require Import LayerSem.Libs.Zutils.BitOps.
 Require Import LayerSem.Libs.Zutils.hardcode_rewrite.
 
-(* Draft two *)
-(* removed dependency on level for walk and refrel, making them the same as walk_npt *)
-(* Uses Haddr_bound for boundary condition: see in set_refine *)
-(* Uses one of the rely clause for boundary condition:
-   see in set_refine
-   rely from line 49 in S2PTTreeOps/Spec.v (level 3 empty for level 4 address)
-*)
-
-(*
-  alternative definition:
-  {a1 / 4096 = a2 / 4096} + {a1 / 4096 / 512 <> a2 / 4096 / 512}
-  a1 / 4096 <> a2 / 4096 -> a1 / 4096 / 512 <> a2 / 4096 / 512
-*)
-(* need level 3 equal means level 4 equal *)
-Definition addr_eq :=
-  forall addr addr',
-    is_addr addr -> is_addr addr' ->
-    addr / 4096 / 512 = addr' / 4096 / 512 -> 
-    addr / 4096 = addr' / 4096.
-
+(* no boundary condition version *)
+(* this one is probably bogus though, since Haneq and Hneq might contradict each other? *)
 Definition pte_mask (pte: Z) : Z :=
   pte |' (1 << 55) |' (1 << 56).
 
@@ -114,19 +96,19 @@ Theorem set_refine :
       (walk : Z -> Z -> X -> option (Z * X))
       (set : Z -> Z -> Z -> Z -> X -> option X)
       (rel: Z -> Z -> Prop)
-    (* Boundary condition *)
-    (Haddr_bound: addr_eq)
     (* array propery *)
     (Haneq:
       forall addr' ,
         (* is_addr addr' -> *)
-        addr' / 4096 / 512 <> addr / 4096 / 512 ->
+        addr' / 4096 <> addr / 4096 ->
+        (* addr' / 4096 / 512 <> addr / 4096 / 512 -> *)
         fst_option (walk vmid addr' mem') = 
         fst_option (walk vmid addr' mem))
     (Haeq:
       forall addr',
         (* is_addr addr' -> *)
         addr' / 4096 / 512 = addr / 4096 / 512 ->
+        (* addr' / 4096 / 512 = addr / 4096 / 512 -> *)
         walk vmid addr' mem' = Some (pte', mem'') /\ rel pte' pte),
     (* goal *)
     refrel vmid hst walk mem rel ->
@@ -134,7 +116,7 @@ Theorem set_refine :
     set vmid addr level pte mem = Some mem' ->
     refrel vmid hst' walk mem' rel.
 Proof.
-  intros X vmid addr level pte pte' mem mem' mem'' gst gst' walk set rel Haddr_bound Haneq Haeq Hrel Hspec Hspec2.
+  intros X vmid addr level pte pte' mem mem' mem'' gst gst' walk set rel Haneq Haeq Hrel Hspec Hspec2.
   inv Hrel. constructor. intros.
   rename addr0 into addr'.
   specialize (id_same0 addr' H) as id_same'.
@@ -159,17 +141,19 @@ Proof.
       split; [assumption|solve_pte_mask].
     (* addr <> addr' *) 
     + rewrite ZMap.gsspec. rewrite zeq_false; [|assumption].
-      specialize (Haneq _ neq). unfold fst_option in Haneq.
+      assert (addr' / 4096 <> addr / 4096) as neq' by congruence.
+      specialize (Haneq _ neq'). unfold fst_option in Haneq.
       destruct (walk vmid addr' mem) as [ [v1 _]|];
       destruct (walk vmid addr' mem') as [ [v2 _]|];
       inversion Haneq; subst; apply id_same'.
   - simpl_func C0; repeat extract_prop. simpl.
     clear Prop1.
-    destruct (Z.eq_dec (addr' / 4096 / 512) (addr / 4096 / 512)) as [eq|neq].
+    destruct (Z.eq_dec (addr' / 4096) (addr / 4096)) as [eq|neq].
     (* addr = addr' *)
-    + specialize (Haeq _ eq) as [Haeq rel_low]. rewrite Haeq.
+    + assert (addr' / 4096 / 512 = addr / 4096 / 512) as eq' by congruence.
+      specialize (Haeq _ eq') as [Haeq rel_low]. rewrite Haeq.
       subst. simpl in Prop0. rewrite eq in *. rewrite Prop0 in *.
-      rewrite ZMap.gsspec. rewrite (Haddr_bound _ _ H Prop2 eq). rewrite zeq_true.
+      rewrite ZMap.gsspec. rewrite zeq_true.
       unfold refrel_pte. simpl. exists pte. unfold rel_pte.
       split; [assumption|solve_pte_mask].
     (* addr <> addr' *)
@@ -179,20 +163,6 @@ Proof.
       destruct (walk vmid addr' mem) as [ [v1 _]|];
       destruct (walk vmid addr' mem') as [ [v2 _]|];
       inversion Haneq; subst; apply id_same'.
-    (* destruct (Z.eq_dec (addr' / 4096 / 512) (addr / 4096 / 512)) as [eq|neq].
-    (* addr = addr' *)
-    + specialize (Haeq _ eq) as [Haeq rel_low]. rewrite Haeq.
-      subst. simpl in Prop0. rewrite eq in *. rewrite Prop0 in *.
-      rewrite ZMap.gsspec. rewrite (Haddr_bound _ _ H Prop2 eq). rewrite zeq_true.
-      unfold refrel_pte. simpl. exists pte. unfold rel_pte.
-      split; [assumption|solve_pte_mask].
-    (* addr <> addr' *)
-    + assert (addr' / 4096 <> addr / 4096) by congruence.
-      rewrite ZMap.gsspec. rewrite zeq_false; [|assumption].
-      specialize (Haneq _ neq). unfold fst_option in Haneq.
-      destruct (walk vmid addr' mem) as [ [v1 _]|];
-      destruct (walk vmid addr' mem') as [ [v2 _]|];
-      inversion Haneq; subst; apply id_same'. *)
 Qed.
 
 Theorem walk_refine:
@@ -242,9 +212,8 @@ Proof.
   try congruence.
   (* refine val *)
   unfold s2pt_walk. inv Hrel. specialize (id_same0 _ Prop2) as id_same'; clear id_same0.
-  simpl in *.
-  destruct (walk vmid addr mem) as [ [u1 aa]|]; [inv Hspec2|congruence].
+  simpl in *. rewrite Hspec2 in id_same'.
   destruct ((e_lv2pt (e_s2pts (shared hst')) @ vmid) @ (addr / 4096 / 512)); [assumption|].
   destruct ((e_lv3pt (e_s2pts (shared hst')) @ vmid) @ (addr / 4096)); [assumption|].
-  exfalso. assumption.
+  inv id_same'.
 Qed.
